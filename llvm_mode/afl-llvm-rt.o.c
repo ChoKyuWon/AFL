@@ -59,6 +59,10 @@
 
 u8  __afl_area_initial[MAP_SIZE];
 u8* __afl_area_ptr = __afl_area_initial;
+//------------------------------
+u8  __afl_patched_area_initial[MAP_SIZE];
+u8* __afl_patched_area_ptr = __afl_patched_area_initial;
+//------------------------------
 
 __thread u32 __afl_prev_loc;
 
@@ -94,6 +98,24 @@ static void __afl_map_shm(void) {
     __afl_area_ptr[0] = 1;
 
   }
+
+  //-----------------------------------------
+  u8 *patched_id_str = getenv(PATCHED_SHM_ENV_VAR);
+
+  /* If we're running under AFL, attach to the appropriate region, replacing the
+     early-stage __afl_area_initial region that is needed to allow some really
+     hacky .init code to work correctly in projects such as OpenSSL. */
+
+  if (patched_id_str) {
+
+    u32 patched_shm_id = atoi(patched_id_str);
+
+    __afl_patched_area_ptr = shmat(patched_shm_id, NULL, 0);
+
+    /* Whooooops. */
+    if (__afl_patched_area_ptr == (void *)-1) _exit(1);
+  }
+  //-----------------------------------------
 
 }
 
