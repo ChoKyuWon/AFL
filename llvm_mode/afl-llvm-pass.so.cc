@@ -116,6 +116,8 @@ bool AFLCoverage::runOnModule(Module &M) {
       0, GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
   /* Instrument all the things! */
+  auto Fty = FunctionType::get(Type::getVoidTy(C), Type::getVoidTy(C), false);
+  auto nullFunc = M.getOrInsertFunction("__afl_do_nothing", Fty);
 
   int inst_blocks = 0;
 
@@ -126,6 +128,10 @@ bool AFLCoverage::runOnModule(Module &M) {
       IRBuilder<> IRB(&(*IP));
 
       if (AFL_R(100) >= inst_ratio) continue;
+      // __afl_do_nothing
+      
+      assert(nullFunc);
+      IRB.CreateCall(nullFunc);
 
       /* Make up cur_loc */
 

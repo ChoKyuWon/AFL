@@ -62,6 +62,8 @@ u8* __afl_area_ptr = __afl_area_initial;
 //------------------------------
 u8  __afl_patched_area_initial[MAP_SIZE];
 u8* __afl_patched_area_ptr = __afl_patched_area_initial;
+u64 hit_count;
+u64 fake_count;
 //------------------------------
 
 __thread u32 __afl_prev_loc;
@@ -71,7 +73,15 @@ __thread u32 __afl_prev_loc;
 
 static u8 is_persistent;
 
+int __afl_do_nothing(void) {
+  fake_count++;
+  return -1;
+}
 
+int __afl_patched_hit(void) {
+  hit_count++;
+  return 1;
+}
 /* SHM setup. */
 
 static void __afl_map_shm(void) {
