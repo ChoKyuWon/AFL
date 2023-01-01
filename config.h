@@ -207,6 +207,10 @@
 
 #define STATS_UPDATE_SEC    60
 #define PLOT_UPDATE_SEC     5
+//-------------------------------
+#define PATCHED_UPDATE_MILLISEC  500
+#define STOP_AFL_SEC        60
+//-------------------------------
 
 /* Smoothing divisor for CPU load and exec speed stats (1 - no smoothing). */
 

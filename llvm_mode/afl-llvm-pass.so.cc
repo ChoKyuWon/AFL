@@ -135,7 +135,10 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       /* Make up cur_loc */
 
-      unsigned int cur_loc = 0xdead;
+      unsigned int cur_loc = AFL_R(MAP_SIZE);
+      //---------------------------------
+      //unsigned int cur_loc = 0xdead;
+      //---------------------------------
 
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
@@ -157,7 +160,8 @@ bool AFLCoverage::runOnModule(Module &M) {
       /* Update bitmap */
       LoadInst *Counter = IRB.CreateLoad(MapPtrIdx);
       Counter->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
-      Value *Incr = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 1));
+      Value *Incr = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 2));
+      //Value *Incr = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 1));
       IRB.CreateStore(Incr, MapPtrIdx)
           ->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 

@@ -151,9 +151,6 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 //---------------------------------
 EXP_ST u8* patched_trace_bits;
-static u32 patched_coverage_num = 0;
-static u32 patched_coverage_store_threshold = 1000;
-static u32 patched_coverage_store_threshold_count = 0;
 //---------------------------------
 
 EXP_ST u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
@@ -247,6 +244,10 @@ static s32 cpu_aff = -1;       	      /* Selected CPU core                */
 #endif /* HAVE_AFFINITY */
 
 static FILE* plot_file;               /* Gnuplot output file              */
+
+//-------------------------------------
+static FILE* patched_coverage;
+//-------------------------------------
 
 struct queue_entry {
 
@@ -865,6 +866,12 @@ EXP_ST void destroy_queue(void) {
 
 }
 
+//----------------------------------------------------------------------------------------
+EXP_ST void save_patched_file(void) {
+  fprintf(patched_coverage, "%llu\n", *((u64*)patched_trace_bits));
+  fflush(patched_coverage);
+}
+//----------------------------------------------------------------------------------------
 
 /* Write bitmap to file. The bitmap is useful mostly for the secret
    -B option, to focus a separate fuzzing session on a particular
@@ -887,26 +894,6 @@ EXP_ST void write_bitmap(void) {
 
   close(fd);
   ck_free(fname);
-
-  //-----------------------------------
-  patched_coverage_store_threshold_count++;
-  if (patched_coverage_store_threshold_count < patched_coverage_store_threshold) {
-    return;
-  }
-  patched_coverage_store_threshold_count = 0;
-  fname = alloc_printf("%s/patched_coverage_%u", out_dir, patched_coverage_num);
-  patched_coverage_num++;
-
-  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-
-  if (fd < 0) PFATAL("Unable to open '%s'", fname);
-
-  ck_write(fd, virgin_bits, MAP_SIZE, fname);
-
-  close(fd);
-  ck_free(fname);
-  //-----------------------------------
-
 }
 
 
@@ -1449,6 +1436,8 @@ EXP_ST void setup_shm(void) {
   //---------------------------
   patched_trace_bits = shmat(patched_shm_id, NULL, 0);
   if (patched_trace_bits == (void *)-1) PFATAL("shmat() failed");
+
+  memset(patched_trace_bits, 0, MAP_SIZE);
   //---------------------------
 }
 
@@ -2144,6 +2133,9 @@ EXP_ST void init_forkserver(char** argv) {
     close(dev_null_fd);
     close(dev_urandom_fd);
     close(fileno(plot_file));
+    //-------------------------
+    close(fileno(patched_coverage));
+    //-------------------------
 
     /* This should improve performance a bit, since it stops the linker from
        doing extra work post-fork(). */
@@ -2417,6 +2409,9 @@ static u8 run_target(char** argv, u32 timeout) {
       close(out_dir_fd);
       close(dev_urandom_fd);
       close(fileno(plot_file));
+      //-------------------------
+      close(fileno(patched_coverage));
+      //-------------------------
 
       /* Set sane defaults for ASAN if nothing else specified. */
 
@@ -3984,7 +3979,7 @@ static void check_term_size(void);
 
 static void show_stats(void) {
 
-  static u64 last_stats_ms, last_plot_ms, last_ms, last_execs;
+  static u64 last_stats_ms, last_plot_ms, last_patched_ms, last_ms, last_execs, first_find_ms;
   static double avg_exec;
   double t_byte_ratio, stab_ratio;
 
@@ -4063,6 +4058,25 @@ static void show_stats(void) {
     maybe_update_plot_file(t_byte_ratio, avg_exec);
  
   }
+
+  //-----------------------------------------------------------
+  //if (cur_ms - last_patched_ms > PATCHED_UPDATE_MILLISEC) {
+  //
+  //  last_patched_ms = cur_ms;
+  //  save_patched_file();
+  //}
+  
+  if (*((u64*)patched_trace_bits)) {
+    if (!first_find_ms) {
+      first_find_ms = cur_ms;
+    }
+    else if (cur_ms - first_find_ms > STOP_AFL_SEC * 1000) {
+      stop_soon = 2;
+    }
+
+    save_patched_file(); // update cycle is 200ms because of the sentence "if (cur_ms - last_ms < 1000 / UI_TARGET_HZ) return;"
+  }
+  //-----------------------------------------------------------
 
   /* Honor AFL_EXIT_WHEN_DONE and AFL_BENCH_UNTIL_CRASH. */
 
@@ -7320,6 +7334,16 @@ EXP_ST void setup_dirs_fds(void) {
                      "pending_total, pending_favs, map_size, unique_crashes, "
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
+  
+  //--------------------------------------------
+  tmp = alloc_printf("%s/patched_coverage", out_dir);
+  fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+
+  patched_coverage = fdopen(fd, "w");
+  if (!patched_coverage) PFATAL("fdopen() failed");
+  //--------------------------------------------
 
 }
 
@@ -8233,6 +8257,9 @@ stop_fuzzing:
   }
 
   fclose(plot_file);
+  //-------------
+  fclose(patched_coverage);
+  //-------------
   destroy_queue();
   destroy_extras();
   ck_free(target_path);
